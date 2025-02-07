@@ -28,7 +28,7 @@ def preprocess_local(image_path):
 model = keras.models.load_model('unet_tumor_model.keras', compile=False)
 
 # The local path to the image being tested
-image_path = "1.jpg"
+image_path = "WebTest.png"
 
 # Preprocess the local image
 original_image, input_image = preprocess_local(image_path)
