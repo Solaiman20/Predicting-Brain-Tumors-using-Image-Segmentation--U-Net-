@@ -1,7 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
-from PIL import Image
 import matplotlib.pyplot as plt
 
 def preprocess_local(image_path):
@@ -25,37 +24,41 @@ def preprocess_local(image_path):
     img_array_normalized = tf.expand_dims(img_array_normalized, axis=0)
     return img_array, img_array_normalized
 
-# Loading the trained U-Net model saved.
+# Load the trained U-Net model
 model = keras.models.load_model('unet_tumor_model.keras', compile=False)
 
-# The local path to the image getting tested.
-image_path = "WebTest.png" 
+# The local path to the image being tested
+image_path = "1.jpg"
 
-# Preprocess the local image.
+# Preprocess the local image
 original_image, input_image = preprocess_local(image_path)
 
-# Run the preprocessed image through the model to predict the segmentation mask.
+# Run the preprocessed image through the model to predict the segmentation mask
 pred_mask = model.predict(input_image)
 
-# Remove the batch dimension.
+# Remove the batch dimension
 pred_mask = np.squeeze(pred_mask, axis=0)
 
-# Scale the predictions to the range [0, 255] and convert to uint8.
-pred_mask = (pred_mask * 255).astype(np.uint8)
+# Apply a threshold to obtain a binary mask
+threshold = 0.5
+binary_mask = (pred_mask > threshold).astype(np.uint8)
 
-# Display the original image and the predicted mask side by side.
+# Scale the binary mask to the range [0, 255] for visualization
+binary_mask_visual = binary_mask * 255
+
+# Display the original image and the binary mask side by side
 plt.figure(figsize=(12, 6))
 
-# Display the original image.
+# Display the original image
 plt.subplot(1, 2, 1)
 plt.imshow(original_image.astype(np.uint8))
 plt.title('Original Image')
 plt.axis('off')
 
-# Display the predicted mask.
+# Display the binary mask
 plt.subplot(1, 2, 2)
-plt.imshow(pred_mask, cmap='gray')
-plt.title('Predicted Mask')
+plt.imshow(binary_mask_visual, cmap='gray')
+plt.title('Predicted Binary Mask')
 plt.axis('off')
 
 plt.show()

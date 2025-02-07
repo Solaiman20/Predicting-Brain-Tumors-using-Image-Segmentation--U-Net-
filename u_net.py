@@ -262,19 +262,16 @@ model = unet_model(input_size=(256, 256, 3), n_filters=32)
 
 
 # %%
-def dice_coef(y_true, y_pred, smooth=1e-6):
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
-
-def dice_loss(y_true, y_pred):
-    return 1 - dice_coef(y_true, y_pred)
-
-def combined_loss(y_true, y_pred):
-    dice = dice_loss(y_true, y_pred)
-    bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
-    return 0.65 * dice + 0.35 * bce
+focal_loss = tf.keras.losses.BinaryFocalCrossentropy(
+    apply_class_balancing=False,
+    alpha=0.25,
+    gamma=2.0,
+    label_smoothing=0.0,
+    axis=-1,
+    reduction="sum_over_batch_size",
+    name="binary_focal_crossentropy",
+    dtype=None,
+)
 def f1_score(y_true, y_pred):
     """
     Computes the F1 score, the harmonic mean of precision and recall.
@@ -295,12 +292,10 @@ def f1_score(y_true, y_pred):
     # Compute the F1 score
     f1 = 2 * precision * recall / (precision + recall + K.epsilon())
     return f1
-
-metrics = ["accuracy", dice_coef, f1_score]
-
+metrics = [f1_score]
 # Compile model
 optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
-model.compile(optimizer=optimizer, loss=combined_loss, metrics=metrics)
+model.compile(optimizer=optimizer, loss=focal_loss, metrics=metrics)
 model.summary()
 
 # %%
@@ -314,6 +309,24 @@ test_dataset = test_dataset.batch(BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
 steps_per_epoch = len(train_coco.getImgIds()) // BATCH_SIZE
 validation_steps = len(val_coco.getImgIds()) // BATCH_SIZE
 test_steps = len(test_coco.getImgIds()) // BATCH_SIZE
+import tensorflow as tf
+
+def augment(image, mask):
+    # Random horizontal flip
+    if tf.random.uniform([]) > 0.5:
+        image = tf.image.flip_left_right(image)
+        mask  = tf.image.flip_left_right(mask)
+    # Random vertical flip
+    if tf.random.uniform([]) > 0.5:
+        image = tf.image.flip_up_down(image)
+        mask  = tf.image.flip_up_down(mask)
+    image = tf.image.random_brightness(image, max_delta=0.1)
+    image = tf.image.random_contrast(image, lower=0.9, upper=1.1)
+    return image, mask
+
+
+train_dataset = train_dataset.map(augment, num_parallel_calls=AUTOTUNE)
+
 
 # %%
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=4, min_lr=1e-5)
@@ -322,7 +335,7 @@ early_stopping = EarlyStopping(monitor='val_loss', patience=8, restore_best_weig
 history = model.fit(
     train_dataset,
     validation_data=val_dataset,
-    epochs=6,
+    epochs=50,
     steps_per_epoch=steps_per_epoch,
     validation_steps=validation_steps,
     callbacks=[early_stopping, reduce_lr]
@@ -347,23 +360,12 @@ def plot_loss(history):
     plt.legend()
     plt.show()
 
-def plot_accuracy(history):
-    plt.figure(figsize=(12, 6))
-    plt.plot(history.history['accuracy'], label='Training Accuracy')
-    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-    plt.title('Training and Validation Accuracy')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.show()
-
 plot_loss(history)
-plot_accuracy(history)
 plot_f1(history)
 
 # %%
-test_loss, test_accuracy, test_coef, test_f1 = model.evaluate(test_dataset, steps=test_steps)
-print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}, Test Dice Coefficient: {test_coef}, Test F1 Score: {test_f1}")
+test_loss, test_f1 = model.evaluate(test_dataset, steps=test_steps)
+print(f"Test Loss: {test_loss}, Test F1 Score: {test_f1}")
 
 # %%
 import random
